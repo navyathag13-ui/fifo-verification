@@ -1,0 +1,48 @@
+<top abs_name="top" size="14" coverage="7" cover_percentage="50.0">
+  <fifo_corner_cases size="7" coverage="0" cover_percentage="0.0" abs_name="top.fifo_corner_cases">
+    <full_boundary_reached size="1" coverage="0" cover_percentage="0.0" abs_name="top.fifo_corner_cases.full_boundary_reached" weight="1" at_least="1">
+      <bin0 bin="True" hits="0" abs_name="top.fifo_corner_cases.full_boundary_reached.bin0" />
+    </full_boundary_reached>
+    <empty_boundary_reached size="1" coverage="0" cover_percentage="0.0" abs_name="top.fifo_corner_cases.empty_boundary_reached" weight="1" at_least="1">
+      <bin0 bin="True" hits="0" abs_name="top.fifo_corner_cases.empty_boundary_reached.bin0" />
+    </empty_boundary_reached>
+    <simultaneous_push_pop_while_full size="1" coverage="0" cover_percentage="0.0" abs_name="top.fifo_corner_cases.simultaneous_push_pop_while_full" weight="1" at_least="1">
+      <bin0 bin="True" hits="0" abs_name="top.fifo_corner_cases.simultaneous_push_pop_while_full.bin0" />
+    </simultaneous_push_pop_while_full>
+    <simultaneous_push_pop_while_empty size="1" coverage="0" cover_percentage="0.0" abs_name="top.fifo_corner_cases.simultaneous_push_pop_while_empty" weight="1" at_least="1">
+      <bin0 bin="True" hits="0" abs_name="top.fifo_corner_cases.simultaneous_push_pop_while_empty.bin0" />
+    </simultaneous_push_pop_while_empty>
+    <reset_while_nonempty size="1" coverage="0" cover_percentage="0.0" abs_name="top.fifo_corner_cases.reset_while_nonempty" weight="1" at_least="1">
+      <bin0 bin="True" hits="0" abs_name="top.fifo_corner_cases.reset_while_nonempty.bin0" />
+    </reset_while_nonempty>
+    <back_to_back_push_then_pop size="1" coverage="0" cover_percentage="0.0" abs_name="top.fifo_corner_cases.back_to_back_push_then_pop" weight="1" at_least="1">
+      <bin0 bin="True" hits="0" abs_name="top.fifo_corner_cases.back_to_back_push_then_pop.bin0" />
+    </back_to_back_push_then_pop>
+    <multiple_consecutive_resets size="1" coverage="0" cover_percentage="0.0" abs_name="top.fifo_corner_cases.multiple_consecutive_resets" weight="1" at_least="1">
+      <bin0 bin="True" hits="0" abs_name="top.fifo_corner_cases.multiple_consecutive_resets.bin0" />
+    </multiple_consecutive_resets>
+  </fifo_corner_cases>
+  <async_fifo_corner_cases size="7" coverage="7" cover_percentage="100.0" abs_name="top.async_fifo_corner_cases">
+    <full_boundary_reached size="1" coverage="1" cover_percentage="100.0" abs_name="top.async_fifo_corner_cases.full_boundary_reached" weight="1" at_least="1">
+      <bin0 bin="True" hits="4041" abs_name="top.async_fifo_corner_cases.full_boundary_reached.bin0" />
+    </full_boundary_reached>
+    <empty_boundary_reached size="1" coverage="1" cover_percentage="100.0" abs_name="top.async_fifo_corner_cases.empty_boundary_reached" weight="1" at_least="1">
+      <bin0 bin="True" hits="4111" abs_name="top.async_fifo_corner_cases.empty_boundary_reached.bin0" />
+    </empty_boundary_reached>
+    <push_rejected_while_full size="1" coverage="1" cover_percentage="100.0" abs_name="top.async_fifo_corner_cases.push_rejected_while_full" weight="1" at_least="1">
+      <bin0 bin="True" hits="2878" abs_name="top.async_fifo_corner_cases.push_rejected_while_full.bin0" />
+    </push_rejected_while_full>
+    <pop_rejected_while_empty size="1" coverage="1" cover_percentage="100.0" abs_name="top.async_fifo_corner_cases.pop_rejected_while_empty" weight="1" at_least="1">
+      <bin0 bin="True" hits="2901" abs_name="top.async_fifo_corner_cases.pop_rejected_while_empty.bin0" />
+    </pop_rejected_while_empty>
+    <wr_clk_faster_than_rd_clk size="1" coverage="1" cover_percentage="100.0" abs_name="top.async_fifo_corner_cases.wr_clk_faster_than_rd_clk" weight="1" at_least="1">
+      <bin0 bin="True" hits="1" abs_name="top.async_fifo_corner_cases.wr_clk_faster_than_rd_clk.bin0" />
+    </wr_clk_faster_than_rd_clk>
+    <rd_clk_faster_than_wr_clk size="1" coverage="1" cover_percentage="100.0" abs_name="top.async_fifo_corner_cases.rd_clk_faster_than_wr_clk" weight="1" at_least="1">
+      <bin0 bin="True" hits="1" abs_name="top.async_fifo_corner_cases.rd_clk_faster_than_wr_clk.bin0" />
+    </rd_clk_faster_than_wr_clk>
+    <simultaneous_dual_domain_reset size="1" coverage="1" cover_percentage="100.0" abs_name="top.async_fifo_corner_cases.simultaneous_dual_domain_reset" weight="1" at_least="1">
+      <bin0 bin="True" hits="1" abs_name="top.async_fifo_corner_cases.simultaneous_dual_domain_reset.bin0" />
+    </simultaneous_dual_domain_reset>
+  </async_fifo_corner_cases>
+</top>
