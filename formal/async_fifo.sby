@@ -1,0 +1,15 @@
+[options]
+mode bmc
+depth 16
+
+[engines]
+smtbmc z3
+
+[script]
+read_verilog -sv async_fifo_formal.sv
+read_verilog async_fifo.v
+prep -top async_fifo_formal_top
+
+[files]
+../rtl/async_fifo.v
+async_fifo_formal.sv

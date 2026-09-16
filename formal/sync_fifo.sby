@@ -1,0 +1,15 @@
+[options]
+mode bmc
+depth 16
+
+[engines]
+smtbmc z3
+
+[script]
+read_verilog -sv sync_fifo_formal.sv
+read_verilog sync_fifo.v
+prep -top sync_fifo_formal_top
+
+[files]
+../rtl/sync_fifo.v
+sync_fifo_formal.sv
