@@ -142,6 +142,40 @@ Without the inversion, a freshly-reset FIFO (both Gray pointers sitting at 0) re
 
 While I was at it, this pass also turned up a real bug in the testbench itself, not the RTL, which is worth admitting rather than glossing over. An earlier version of the writer coroutine checked its loop-exit condition before the clock edge that would actually commit the final queued push — so the last transfer's `wr_en` got zeroed before the hardware ever saw it. The checker's bookkeeping said 200 pushed; the DUT had only actually gotten 199; the reader sat there forever waiting on a value that was never really written. I noticed because it hung at exactly 199/200 every time regardless of seed, which is a pretty strong sign something structural was wrong rather than a rare unlucky roll. Fixed by restructuring the loop so a queued operation's edge always completes before the loop decides whether to stop.
 
+## Formal verification
+
+Random testing, however long you run it, only ever samples the state space. Formal model checking covers all of it, up to whatever depth you check, by asking an SMT solver to prove a property has no counterexample rather than just failing to find one in N random tries. Added this with [SymbiYosys](https://github.com/YosysHQ/sby) (Yosys + Z3), on top of the two directed/random suites above, not instead of them.
+
+### Both formal wrappers are black boxes on purpose
+
+`formal/sync_fifo_formal.sv` and `formal/async_fifo_formal.sv` instantiate the real DUT and check it only through its own ports — `wr_en`, `rd_en`, `full`, `empty`, and so on — never reaching into internal registers like `wr_ptr`. First attempt at the sync wrapper did reach in, through a hierarchical dot-path (`dut.wr_ptr`), and it silently produced a proof with zero actual `$assert` cells in it: Yosys's `prep` flattening restructures the hierarchy in a way that breaks a plain textual dot-path reference, so nothing downstream ever got checked, and a deliberately broken build of the RTL "passed" the proof — vacuously, because nothing was being asked of it. Caught it by explicitly counting assert cells after `prep`, not by the proof failing the way it should have. The fix ended up mirroring `ref_model.py`'s own philosophy: don't trust internal signal names, watch only what's externally observable. Each wrapper carries a small shadow counter that reconstructs the live item count purely from `wr_en`/`rd_en`/`full`/`empty`, then checks it against the DUT's own `full`/`empty` outputs.
+
+### What's proved
+
+For both designs: `full` and `empty` are never simultaneously true, and the live item count never exceeds `DEPTH`. Both run as bounded model checking (`mode bmc`) at depth 16 — a full fill-to-DEPTH-and-drain cycle, exhaustively, not sampled.
+
+Tried `mode prove` (k-induction, technically unbounded) on the sync design first, since it's usually the faster option once it works. Basecase passed; the induction step didn't. That means the four-property set as written isn't self-inductive on its own — there's some hypothetical state that satisfies all four properties but isn't actually reachable from reset, from which the solver can still step to a violation. Fixing that properly means finding and adding the missing auxiliary invariant that rules out that spurious state, which is its own small research problem. Went with a solid depth-16 BMC proof instead rather than leave a broken `mode prove` run in the repo — a real, exhaustive-to-depth-16 proof beats an induction attempt that doesn't actually close.
+
+The async proof needed its own separate fix, for a different reason. First draft of `async_fifo_formal.sv` had its shadow counter written as a single register updated from two separate `always` blocks, one per clock domain — a straightforward multi-driver bug that should never have compiled the way it was reasoned out on paper. Fixed by splitting it into two free-running, single-driver counters (`wr_push_count`, `rd_pop_count`), one per domain, with the live count read as their plain difference.
+
+Second, tried running the async proof with `multiclock on`, treating `wr_clk` and `rd_clk` as genuinely independent free inputs so the solver could explore arbitrary relative edge orderings. That broke reset: these are synchronous resets, so a register only actually clears when its own clock ticks while `rst_n` is held low, and under multiclock unrolling the solver is completely free to just never toggle one of the clocks during the reset window — leaving that domain's registers sitting at arbitrary garbage forever. Confirmed this by dumping the generated counterexample testbench and finding the shadow counters already at nonzero values at step 0, before any clock edge had fired. Real fairness constraints on independently-free clocks are a legitimate way to fix this properly, but getting them right is its own undertaking, so instead the two clocks are tied together in the formal wrapper. That's a real, documented scope reduction — this proof does not explore arbitrary asynchronous relative-phase orderings the way true CDC-aware formal verification would. What it does check, exhaustively, is that the Gray-code pointer logic, the synchronizer stages, and the full/empty comparisons are self-consistent and never overflow, under lockstep clocking. Still catches the same class of control-logic bug (see below); just doesn't claim to explore clock-relative-phase space the way `multiclock on` would if done properly.
+
+### Proving the formal proofs can fail too
+
+Same discipline as the cocotb suites: break the RTL on purpose, confirm the proof catches it, revert, confirm clean.
+
+Sync: reintroduced the missing wrap-bit check in `full`'s comparison. The proof failed at step 2 — barely into the trace, since a freshly-reset FIFO with a broken `full` comparison hits the bug almost immediately.
+
+Async: dropped the top-bit inversion from `full_next`'s comparison, same deliberate bug as the cocotb suite exercises. The proof failed at step 3.
+
+Both reverted, both confirmed clean again afterward.
+
+```bash
+cd formal
+sby -f sync_fifo.sby     # PASS in ~20s
+sby -f async_fifo.sby    # PASS in ~6s
+```
+
 ## How to run
 
 ### Setup (macOS, Homebrew)
@@ -190,6 +224,11 @@ fifo-verification/
 │   ├── test_async_fifo.py   # 8 cocotb tests (7 directed + 1 randomized), async
 │   ├── ref_model.py         # RefFifo (sync, cycle-accurate) + OrderedIntegrityChecker (async, order-only)
 │   └── coverage.py          # coverage bin definitions for both suites, plus report/export
+├── formal/
+│   ├── sync_fifo_formal.sv    # black-box formal wrapper + properties for sync_fifo.v
+│   ├── sync_fifo.sby          # SymbiYosys job file, sync (BMC, depth 16)
+│   ├── async_fifo_formal.sv   # black-box formal wrapper + properties for async_fifo.v
+│   └── async_fifo.sby         # SymbiYosys job file, async (BMC, depth 16, tied clocks)
 ├── Makefile                 # cocotb-driven sim, strict IEEE 1364-2005 (-g2005); `make` = sync, `make async` = async
 ├── requirements.txt
 └── results/                 # generated: results_{sync,async}.xml, coverage{,_async}.xml, waves{,_async}.vcd
@@ -197,7 +236,9 @@ fifo-verification/
 
 ## What I'd add next
 
-Formal verification with SymbiYosys, for both designs' full/empty logic — proving things like "full and empty are never both true" and "the live item count never exceeds DEPTH" exhaustively instead of just probabilistically through random testing. Random testing makes a property likely true across whatever sequences it happened to generate. A formal solver proves it for every reachable state, in seconds, for control logic this small. In progress right now, actually.
+Finish the sync design's k-induction proof (`mode prove`) properly — find and add the auxiliary invariant that makes the four-property set self-inductive, instead of settling for a fixed-depth BMC proof. Would give an actually unbounded guarantee rather than "true up to depth 16."
+
+Real multiclock formal verification for the async design, with proper fairness constraints on independently-free `wr_clk`/`rd_clk` so the solver can explore genuine asynchronous relative-phase orderings instead of the current tied-clock scope reduction.
 
 Static CDC analysis (SpyGlass CDC, Conformal CDC, something in that family) on the async design — the actual industry-standard way to check synchronizer structure and metastability risk, which functional simulation just can't do (see the CDC section above for why).
 
