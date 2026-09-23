@@ -382,10 +382,22 @@ async def test_random_traffic(dut):
     consecutive_resets = 0
     prev_was_push_only = False
 
+    # Traffic comes in phases so the rare corners (full, then push+pop while full) are
+    # reached under every seed, not just lucky ones. A flat 50/50 push/pop mix on a
+    # 16-deep FIFO almost never sits at full long enough to see a simultaneous
+    # push+pop there; measured before this change, roughly 3 in 8 random seeds missed it.
+    PHASE_PROFILES = [(0.5, 0.5), (0.85, 0.25), (0.25, 0.85), (0.9, 0.9)]
+    PHASE_LEN = 100
+    p_wr, p_rd = PHASE_PROFILES[0]
+
     for cycle in range(1, n_cycles + 1):
-        do_reset = rnd.random() < 0.02
-        wr_en = False if do_reset else rnd.random() < 0.5
-        rd_en = False if do_reset else rnd.random() < 0.5
+        if (cycle - 1) % PHASE_LEN == 0:
+            p_wr, p_rd = rnd.choice(PHASE_PROFILES)
+        # Resets arrive in bursts: right after one, another is far likelier. Independent 2% resets
+        # would only give back-to-back resets about 0.04% of the time, so some seeds never saw one.
+        do_reset = rnd.random() < (0.25 if consecutive_resets > 0 else 0.02)
+        wr_en = False if do_reset else rnd.random() < p_wr
+        rd_en = False if do_reset else rnd.random() < p_rd
         wr_data = rnd.randrange(0, 1 << data_width) if wr_en else 0
 
         was_full = ref.full

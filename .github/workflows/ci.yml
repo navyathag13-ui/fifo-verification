@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  simulation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install Icarus Verilog and the Python packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          iverilog -V | head -1
+          pip install -r requirements.txt
+      - name: Sync FIFO suite
+        run: make
+      - name: Async FIFO suite
+        run: make async
+      - name: Sweep across depths and data widths
+        run: make sweep
+
+  formal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: YosysHQ/setup-oss-cad-suite@v3
+      - name: Bounded model checks (SymbiYosys + Z3)
+        run: |
+          cd formal
+          sby -f sync_fifo.sby
+          sby -f async_fifo.sby

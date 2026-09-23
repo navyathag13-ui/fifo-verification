@@ -7,6 +7,8 @@
 #
 # `make`        -> sync FIFO suite (default)
 # `make async`  -> async (dual-clock) FIFO suite
+# `make DEPTH=8 DATA_WIDTH=16`  -> override the design parameters (DEPTH must be a power of 2)
+# `make sweep`  -> run both suites across several depths and data widths
 
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
@@ -29,19 +31,32 @@ endif
 export PYTHONPATH := $(PROJECT_ROOT)/verif:$(PYTHONPATH)
 
 COMPILE_ARGS += -g2005
+
+# Optional parameter overrides. The tests read DEPTH/DATA_WIDTH from the design itself,
+# so the same suite runs unchanged at any size.
+DEPTH ?=
+DATA_WIDTH ?=
+ifneq ($(DEPTH),)
+COMPILE_ARGS += -P$(TOPLEVEL).DEPTH=$(DEPTH)
+endif
+ifneq ($(DATA_WIDTH),)
+COMPILE_ARGS += -P$(TOPLEVEL).DATA_WIDTH=$(DATA_WIDTH)
+endif
 # cocotb's own -s $(TOPLEVEL) restricts elaboration to that one root;
 # the dump helper has no instantiating parent either, so it needs its
 # own explicit root or it's silently never elaborated (and never dumps).
 COMPILE_ARGS += -s $(DUMP_MODULE)
 
-SIM_BUILD := $(PROJECT_ROOT)/results/sim_build
-COCOTB_RESULTS_FILE := $(PROJECT_ROOT)/results/results_$(SIM_TARGET).xml
+# One build folder per configuration, so switching target or parameters never reuses a stale build.
+CONFIG_TAG := $(SIM_TARGET)_d$(if $(DEPTH),$(DEPTH),default)_w$(if $(DATA_WIDTH),$(DATA_WIDTH),default)
+SIM_BUILD := $(PROJECT_ROOT)/results/sim_build_$(CONFIG_TAG)
+COCOTB_RESULTS_FILE := $(PROJECT_ROOT)/results/results_$(CONFIG_TAG).xml
 export COVERAGE_XML := $(PROJECT_ROOT)/results/coverage.xml
 export COVERAGE_ASYNC_XML := $(PROJECT_ROOT)/results/coverage_async.xml
 
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
-.PHONY: clean-all async
+.PHONY: clean-all async sweep
 
 # `sim` is cocotb's own target (built by the include above); this project
 # doesn't rename it, but `make` with no target already runs it.
@@ -49,6 +64,12 @@ include $(shell cocotb-config --makefiles)/Makefile.sim
 async:
 	$(MAKE) SIM_TARGET=async sim
 
+sweep:
+	@for d in 4 8 16 32; do for w in 8 16; do \
+	  echo "== sync  DEPTH=$$d DATA_WIDTH=$$w"; $(MAKE) SIM_TARGET=sync DEPTH=$$d DATA_WIDTH=$$w sim || exit 1; \
+	  echo "== async DEPTH=$$d DATA_WIDTH=$$w"; $(MAKE) SIM_TARGET=async DEPTH=$$d DATA_WIDTH=$$w sim || exit 1; \
+	done; done
+
 clean-all: clean
-	rm -rf $(PROJECT_ROOT)/results/sim_build
+	rm -rf $(PROJECT_ROOT)/results/sim_build*
 	rm -f $(PROJECT_ROOT)/results/results_*.xml $(PROJECT_ROOT)/results/coverage*.xml $(PROJECT_ROOT)/results/*.vcd

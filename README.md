@@ -8,7 +8,9 @@ Two parameterized FIFOs in Verilog, one single-clock, one dual-clock (async), bo
 - **18 cocotb tests** (10 sync, 8 async) passing, including a 5,000-cycle randomized test checked against a Python reference model
 - Formal checking with **SymbiYosys and Z3** on both designs
 - Tests that I proved can fail, by planting bugs in the RTL and watching the suite catch them
-- Functional coverage of every corner case I listed (7 of 7 in each suite)
+- Functional coverage of every corner case I listed (7 of 7 in each suite), on every random seed I tried
+- Passes across 40 random seeds (sync) and 25 (async), and at 16 different depth and width combinations
+- Found and fixed a flaw in my own random test (it failed about 3 runs in 8) by shaping the traffic so every corner case is reached
 
 
 ## Why I built this
@@ -34,14 +36,15 @@ I re-ran everything from a fresh `git clone` on 2026-09-23 (commit `b637323`, Ap
 
 | Check | Result |
 |---|---|
-| Sync FIFO, cocotb | 10 of 10 tests pass, including a 5,000-cycle randomized run compared against the Python model |
-| Async (dual-clock) FIFO, cocotb | 8 of 8 tests pass |
+| Sync FIFO, cocotb | 10 of 10 tests pass, including a 5,000-cycle randomized run compared against the Python model. Across 40 different random seeds: 40 of 40 pass. |
+| Async (dual-clock) FIFO, cocotb | 8 of 8 tests pass. Across 25 different random seeds: 25 of 25 pass. |
+| Other sizes | Both suites also pass at `DEPTH` 4, 8, 16 and 32 with `DATA_WIDTH` 8 and 16 (16 configurations, `make sweep`) |
 | Formal checks | Both FIFOs pass. These are **bounded** model checks to depth 16 (a full fill and drain), not unbounded proofs. I tried k-induction on the sync design and the induction step did not close, which the "Formal verification" section explains. |
 | Do the tests actually catch bugs? | Yes. I broke the RTL on purpose (for example the full flag's wrap bit) and each suite failed as it should. The sections named "Proving the ... tests can actually fail" show the failures. |
 | Functional coverage | Sync hits 7 of 7 corner-case bins and async hits 7 of 7 (counts are in the tables below) |
 | Code coverage of the Verilog | Not measured. The simulator I used can't report it. |
 
-What none of this shows: correctness for every parameter value, or that the async design would pass a real clock-domain-crossing sign-off on silicon. It is simulation plus bounded formal checking on one configuration.
+What none of this shows: that the async design would pass a real clock-domain-crossing sign-off on silicon, or anything about depths above 32 or non-power-of-two depths. The simulation covers 8 configurations per FIFO, and the formal checks cover only the default one (depth 16, width 8).
 
 ## How it came together
 
@@ -51,7 +54,10 @@ What none of this shows: correctness for every parameter value, or that the asyn
 4. Built the async FIFO (Gray code pointers, synchronizers) and a testbench with two clocks at different rates.
 5. Added formal checks for the things simulation cannot exhaust.
 
-Two practical notes if you run it yourself: `make` does not like folder paths that contain spaces, and switching between `make` and `make async` needs the `results/sim_build` folder cleared first.
+6. Ran the suite over many random seeds. That exposed a flaw in my own test: with a random seed, the sync suite failed about 3 runs in 8. The design was fine every time (it always matched the reference model); the failure was the test's own check that the random traffic had reached every corner case. A flat 50/50 push/pop mix rarely sat at full, and independent 2% resets almost never came back to back. I changed the traffic to run in phases (balanced, fill-heavy, drain-heavy, both-heavy) and to reset in bursts. It now passes 40 of 40 random seeds, and I re-checked that the suite still fails when I break the RTL on purpose (9 of 10 tests fail with the wrap bit removed, 7 of 10 with `empty` stuck low).
+7. Added `DEPTH` and `DATA_WIDTH` overrides and a sweep across sizes. Each configuration builds in its own folder, which also removed an earlier annoyance where switching between `make` and `make async` reused a stale build.
+
+One practical note if you run it yourself: `make` does not like folder paths that contain spaces.
 
 ---
 
@@ -104,17 +110,17 @@ That's a real failure, by the way — from deliberately breaking `full`'s wrap-b
 
 Using [cocotb-coverage](https://github.com/mciepluc/cocotb-coverage) for this, not a hand-rolled dict. It's still actively maintained (v2.0 in October 2025, adjusted for cocotb ≥2.0) and it's the tool the ecosystem actually uses — same CRV/MDV coverage model SystemVerilog verification environments have used forever. Each bin here is single-bin hit/miss: "covered" means the random test reached that state at least once, the RTL equivalent of a gcov line hit, not a value-domain thing.
 
-| Corner case | Hit? | Times hit (seed 42, 5,000 cycles) |
-|---|---|---|
-| FIFO reached full | ✅ | 17 |
-| FIFO reached empty | ✅ | 752 |
-| Simultaneous push+pop while full | ✅ | 6 |
-| Simultaneous push+pop while empty | ✅ | 174 |
-| Reset while non-empty | ✅ | 92 |
-| Back-to-back push-then-pop | ✅ | 309 |
-| Multiple consecutive resets | ✅ | 1 |
+| Corner case | Hit? |
+|---|---|
+| FIFO reached full | ✅ |
+| FIFO reached empty | ✅ |
+| Simultaneous push+pop while full | ✅ |
+| Simultaneous push+pop while empty | ✅ |
+| Reset while non-empty | ✅ |
+| Back-to-back push-then-pop | ✅ |
+| Multiple consecutive resets | ✅ |
 
-7/7. With DEPTH=16, a 50/50 push/pop mix and a 2% reset chance, full-boundary and simultaneous-while-full are the rare ones — you need a real streak of net pushes to get 16 items resident. Which is why the default is 5,000 cycles and not a couple hundred; at 200 cycles those two bins reliably come up empty. Full XML report lands in `results/coverage.xml` after every run.
+7/7 on every seed I tried (40 random seeds plus the fixed seed 42). The report records hit or miss for each corner, not how many times it was hit; an earlier version of this table listed hit counts that came from the old fixed 50/50 traffic, and I removed them because they no longer describe the current stimulus. The rare corners are full and simultaneous push+pop while full, which need a long run of net pushes, and back-to-back resets. That is why the traffic runs in phases and resets come in bursts.
 
 ### Proving the sync tests can actually fail
 
@@ -260,7 +266,9 @@ RANDOM_CYCLES=50000 make                    # sync, longer run for more confiden
 ASYNC_RANDOM_TRANSFERS=10000 make async     # same idea, async side
 RANDOM_SEED=42 make                          # reproduce a specific sync run
 RANDOM_SEED=42 make async                    # same, async
-make clean-all                               # wipe results/ and the sim build dir
+make DEPTH=8 DATA_WIDTH=16                   # run at a different size (DEPTH a power of 2)
+make sweep                                   # both suites at depths 4/8/16/32 and widths 8/16
+make clean-all                               # wipe results/ and the sim build dirs
 ```
 
 ## Project structure
@@ -284,7 +292,7 @@ fifo-verification/
 │   └── async_fifo.sby         # SymbiYosys job file, async (BMC, depth 16, tied clocks)
 ├── Makefile                 # cocotb-driven sim, strict IEEE 1364-2005 (-g2005); `make` = sync, `make async` = async
 ├── requirements.txt
-└── results/                 # generated: results_{sync,async}.xml, coverage{,_async}.xml, waves{,_async}.vcd
+└── results/                 # generated: per-configuration results_*.xml, coverage{,_async}.xml, waves{,_async}.vcd
 ```
 
 ## What I'd add next
