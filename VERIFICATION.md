@@ -31,9 +31,9 @@ Re-running the sync suite with random seeds (the default) showed it was flaky. B
 | RTL mutant: `empty` stuck at 0 | 7 of 10 sync tests fail |
 | Original RTL restored | 10 of 10 pass |
 
-The earlier line in this file saying the suite passed 10/10 was a single run that happened to use a lucky seed.
+The 10/10 in the first table above was one run with one seed; the random-seed table here is the fuller picture.
 
-## Still not measured
+## Next
 
 - Line or branch coverage of the Verilog
 - Formal checks at anything other than the default size (depth 16, width 8)
