@@ -17,7 +17,23 @@ The formal runs use `mode bmc` at `depth 16`, so they check every behaviour up t
 
 Two hiccups while re-running, both about the environment and not the design: `make` fails if the project path contains a space, and running `make async` right after `make` fails until `results/sim_build` is removed, because the previous simulation build is reused.
 
-## Not measured
 
-- Line or branch coverage of the Verilog (no coverage-capable simulator in this setup)
-- Other values of `DEPTH` and `DATA_WIDTH`
+## Later the same day: flaky random test found and fixed
+
+Re-running the sync suite with random seeds (the default) showed it was flaky. Before the fix: 3 failures in 8 runs. The failure was never a design bug: `test_random_traffic` asserts that the random traffic reached every corner case, and some seeds missed one (first "simultaneous push and pop while full", then, after I fixed that, "multiple consecutive resets"). After changing the traffic to run in phases and to reset in bursts:
+
+| Run | Result |
+|---|---|
+| Sync, 40 random seeds | 40 of 40 pass |
+| Async, 25 random seeds | 25 of 25 pass |
+| Sweep, `DEPTH` 4/8/16/32 x `DATA_WIDTH` 8/16, sync and async | 16 of 16 configurations pass (10/10 and 8/8 each) |
+| RTL mutant: `full` ignores the wrap bit | 9 of 10 sync tests fail (suite still catches it) |
+| RTL mutant: `empty` stuck at 0 | 7 of 10 sync tests fail |
+| Original RTL restored | 10 of 10 pass |
+
+The earlier line in this file saying the suite passed 10/10 was a single run that happened to use a lucky seed.
+
+## Still not measured
+
+- Line or branch coverage of the Verilog
+- Formal checks at anything other than the default size (depth 16, width 8)
