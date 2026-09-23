@@ -16,7 +16,7 @@ Re-run from a fresh `git clone` of this repo (commit `b637323`, Icarus Verilog +
 | Async (dual-clock) FIFO cocotb suite | **8/8 tests pass** |
 | Formal proofs (SymbiYosys + Z3) | Both FIFOs: **PASS** |
 | Can the tests fail? | Yes: each suite was run against deliberately broken RTL and caught the bugs (see "Proving the ... tests can actually fail"). |
-| Coverage | Functional corner-case coverage via cocotb-coverage (tables below). Line/code coverage of the RTL was **not measured**. |
+| Coverage | Functional corner-case coverage via cocotb-coverage, re-checked from the fresh run's own `coverage*.xml`: sync **7/7** bins hit, async **7/7** bins hit (tables below). Line/code coverage of the RTL was **not measured** (no coverage-capable simulator in this toolchain). |
 | Limits | Simulation and bounded formal proofs on a parameterized design; not a proof for every parameter value or a silicon-validated CDC signoff. |
 
 ## How we got here
