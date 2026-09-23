@@ -2,6 +2,29 @@
 
 Two parameterized FIFOs in Verilog, one single-clock, one dual-clock (async), both verified with Python-based [cocotb](https://www.cocotb.org/) testbenches. Same philosophy I apply on the software side: fuzz until it stops finding anything, track coverage so you actually know the fuzzing reached the interesting states, and write tests that assume the design is broken rather than tests that just confirm it isn't. The FIFOs themselves aren't the hard part — pointers, a comparator, a memory array. The verification is the actual project here. Directed tests for the specific ways FIFOs break in practice, randomized tests that check the DUT against a plain Python reference model instead of a fixed list of expected inputs, and for the async design, the thing that actually makes async FIFOs a respected skill: clock-domain-crossing correctness, not just the FIFO logic sitting on top of it.
 
+## Problem statement
+
+FIFOs are easy to write and easy to get subtly wrong (off-by-one on full/empty, overflow on a push while full, corrupted pointers after a mid-stream reset), and a dual-clock FIFO adds clock-domain-crossing hazards that ordinary simulation can miss. This project builds a single-clock and a dual-clock FIFO in Verilog and asks: how do you show the verification itself is trustworthy?
+
+## Results
+
+Re-run from a fresh `git clone` of this repo (commit `b637323`, Icarus Verilog + cocotb 2.1):
+
+| Check | Result |
+|---|---|
+| Sync FIFO cocotb suite | **10/10 tests pass**, including a 5,000-cycle randomized test against a Python reference model |
+| Async (dual-clock) FIFO cocotb suite | **8/8 tests pass** |
+| Formal proofs (SymbiYosys + Z3) | Both FIFOs: **PASS** |
+| Can the tests fail? | Yes: each suite was run against deliberately broken RTL and caught the bugs (see "Proving the ... tests can actually fail"). |
+| Coverage | Functional corner-case coverage via cocotb-coverage (tables below). Line/code coverage of the RTL was **not measured**. |
+| Limits | Simulation and bounded formal proofs on a parameterized design; not a proof for every parameter value or a silicon-validated CDC signoff. |
+
+## How we got here
+
+Directed tests were written per real FIFO bug class first, then a randomized test with a plain-Python reference model as the oracle, then coverage counting to check the random test actually reached the rare corners, then deliberate bug injection to prove the tests catch failures, and finally formal properties for what simulation can't prove. Note for running: `make` breaks if the project path contains spaces, and switching between `make` and `make async` needs `results/sim_build` cleared.
+
+---
+
 ## Sync FIFO
 
 ### Why these test cases
