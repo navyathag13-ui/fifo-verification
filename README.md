@@ -2,6 +2,15 @@
 
 Two parameterized FIFOs in Verilog, one single-clock, one dual-clock (async), both verified with Python-based [cocotb](https://www.cocotb.org/) testbenches. Same philosophy I apply on the software side: fuzz until it stops finding anything, track coverage so you actually know the fuzzing reached the interesting states, and write tests that assume the design is broken rather than tests that just confirm it isn't. The FIFOs themselves aren't the hard part — pointers, a comparator, a memory array. The verification is the actual project here. Directed tests for the specific ways FIFOs break in practice, randomized tests that check the DUT against a plain Python reference model instead of a fixed list of expected inputs, and for the async design, the thing that actually makes async FIFOs a respected skill: clock-domain-crossing correctness, not just the FIFO logic sitting on top of it.
 
+## Highlights
+
+- Two parameterized FIFOs in Verilog: a single-clock one, and a **dual-clock one with Gray-coded pointers and synchronizers**
+- **18 cocotb tests** (10 sync, 8 async) passing, including a 5,000-cycle randomized test checked against a Python reference model
+- Formal checking with **SymbiYosys and Z3** on both designs
+- Tests that I proved can fail, by planting bugs in the RTL and watching the suite catch them
+- Functional coverage of every corner case I listed (7 of 7 in each suite)
+
+
 ## Why I built this
 
 A FIFO looks like the simplest thing in digital design, and it is also where a lot of real hardware bugs hide: a full flag that goes high one cycle late, a push that sneaks in while the buffer is full, a reset that clears one pointer and forgets the other. The dual-clock version is harder still, because data crosses between two clocks that have no fixed relationship.
