@@ -2,26 +2,47 @@
 
 Two parameterized FIFOs in Verilog, one single-clock, one dual-clock (async), both verified with Python-based [cocotb](https://www.cocotb.org/) testbenches. Same philosophy I apply on the software side: fuzz until it stops finding anything, track coverage so you actually know the fuzzing reached the interesting states, and write tests that assume the design is broken rather than tests that just confirm it isn't. The FIFOs themselves aren't the hard part — pointers, a comparator, a memory array. The verification is the actual project here. Directed tests for the specific ways FIFOs break in practice, randomized tests that check the DUT against a plain Python reference model instead of a fixed list of expected inputs, and for the async design, the thing that actually makes async FIFOs a respected skill: clock-domain-crossing correctness, not just the FIFO logic sitting on top of it.
 
-## Problem statement
+## Why I built this
 
-FIFOs are easy to write and easy to get subtly wrong (off-by-one on full/empty, overflow on a push while full, corrupted pointers after a mid-stream reset), and a dual-clock FIFO adds clock-domain-crossing hazards that ordinary simulation can miss. This project builds a single-clock and a dual-clock FIFO in Verilog and asks: how do you show the verification itself is trustworthy?
+A FIFO looks like the simplest thing in digital design, and it is also where a lot of real hardware bugs hide: a full flag that goes high one cycle late, a push that sneaks in while the buffer is full, a reset that clears one pointer and forgets the other. The dual-clock version is harder still, because data crosses between two clocks that have no fixed relationship.
 
-## Results
+I wanted to practise the part of hardware work I find most interesting, which is not writing the design but convincing yourself (and a reviewer) that it works. So this repo has two small FIFOs in Verilog, one on a single clock and one on two, and a lot of effort spent on checking them: directed tests, a randomized test against a reference model, coverage counting, bugs I planted on purpose to make sure the tests notice, and formal checks.
 
-Re-run from a fresh `git clone` of this repo (commit `b637323`, Icarus Verilog + cocotb 2.1):
+## Tech stack
+
+| Piece | What I used |
+|---|---|
+| Design | Verilog (compiled as strict IEEE 1364-2005 so no SystemVerilog sneaks in), both FIFOs parameterized by `DATA_WIDTH` (default 8) and `DEPTH` (default 16, a power of two); Gray-coded pointers and two-flop synchronizers in the async one |
+| Simulation | Icarus Verilog 13.0 |
+| Testbenches | cocotb 2.1 (Python), with a plain Python `deque` as the reference model |
+| Coverage | cocotb-coverage 2.x (functional coverage of corner cases) |
+| Formal | SymbiYosys with Yosys and the Z3 solver, SystemVerilog assertion wrappers kept separate from the design |
+| Automation | Make |
+
+## What I found
+
+I re-ran everything from a fresh `git clone` on 2026-09-23 (commit `b637323`, Apple M4 Mac). The details are in [`VERIFICATION.md`](VERIFICATION.md).
 
 | Check | Result |
 |---|---|
-| Sync FIFO cocotb suite | **10/10 tests pass**, including a 5,000-cycle randomized test against a Python reference model |
-| Async (dual-clock) FIFO cocotb suite | **8/8 tests pass** |
-| Formal proofs (SymbiYosys + Z3) | Both FIFOs: **PASS** |
-| Can the tests fail? | Yes: each suite was run against deliberately broken RTL and caught the bugs (see "Proving the ... tests can actually fail"). |
-| Coverage | Functional corner-case coverage via cocotb-coverage, re-checked from the fresh run's own `coverage*.xml`: sync **7/7** bins hit, async **7/7** bins hit (tables below). Line/code coverage of the RTL was **not measured** (no coverage-capable simulator in this toolchain). |
-| Limits | Simulation and bounded formal proofs on a parameterized design; not a proof for every parameter value or a silicon-validated CDC signoff. |
+| Sync FIFO, cocotb | 10 of 10 tests pass, including a 5,000-cycle randomized run compared against the Python model |
+| Async (dual-clock) FIFO, cocotb | 8 of 8 tests pass |
+| Formal checks | Both FIFOs pass. These are **bounded** model checks to depth 16 (a full fill and drain), not unbounded proofs. I tried k-induction on the sync design and the induction step did not close, which the "Formal verification" section explains. |
+| Do the tests actually catch bugs? | Yes. I broke the RTL on purpose (for example the full flag's wrap bit) and each suite failed as it should. The sections named "Proving the ... tests can actually fail" show the failures. |
+| Functional coverage | Sync hits 7 of 7 corner-case bins and async hits 7 of 7 (counts are in the tables below) |
+| Code coverage of the Verilog | Not measured. The simulator I used can't report it. |
 
-## How we got here
+What none of this shows: correctness for every parameter value, or that the async design would pass a real clock-domain-crossing sign-off on silicon. It is simulation plus bounded formal checking on one configuration.
 
-Directed tests were written per real FIFO bug class first, then a randomized test with a plain-Python reference model as the oracle, then coverage counting to check the random test actually reached the rare corners, then deliberate bug injection to prove the tests catch failures, and finally formal properties for what simulation can't prove. Note for running: `make` breaks if the project path contains spaces, and switching between `make` and `make async` needs `results/sim_build` cleared.
+## How it came together
+
+1. Wrote the sync FIFO and one directed test per real bug class (full and empty boundaries, push while full, pop while empty, simultaneous push and pop, resets in the middle of traffic).
+2. Added the randomized test with a Python reference model, then counted which corner cases it actually reached, so I knew it wasn't just passing by never visiting the hard cases.
+3. Planted bugs to check that the suite fails when it should.
+4. Built the async FIFO (Gray code pointers, synchronizers) and a testbench with two clocks at different rates.
+5. Added formal checks for the things simulation cannot exhaust.
+
+Two practical notes if you run it yourself: `make` does not like folder paths that contain spaces, and switching between `make` and `make async` needs the `results/sim_build` folder cleared first.
 
 ---
 
