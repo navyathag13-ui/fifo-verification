@@ -11,6 +11,7 @@ Two parameterized FIFOs in Verilog, one single-clock, one dual-clock (async), bo
 - Functional coverage of every corner case I listed (7 of 7 in each suite), on every random seed I tried
 - Passes across 40 random seeds (sync) and 25 (async), and at 16 different depth and width combinations
 - Found and fixed a flaw in my own random test (it failed about 3 runs in 8) by shaping the traffic so every corner case is reached
+- A **C++17 cycle-accurate model** of the sync FIFO with **94 GoogleTest tests**, cross-checked every cycle against an independent `std::deque` model and caught by planted bugs (see [C++ reference model](#c-reference-model))
 
 
 ## Why I built this
@@ -306,3 +307,30 @@ Static CDC analysis (SpyGlass CDC, Conformal CDC, something in that family) on t
 Verilator as a second simulator. Running the exact same testbenches against two independently-implemented simulators is a good sanity check that a passing result reflects real RTL behavior and not some simulator-specific quirk. Worth doing before trusting this as a final signoff rather than just a development check.
 
 Independent single-domain reset support for the async FIFO, with the extra reset-synchronization machinery that needs (see the design note on reset in the async section above).
+
+---
+
+## C++ reference model
+
+`cpp/` holds a C++17 model of `rtl/sync_fifo.v` and a GoogleTest suite, built with CMake.
+
+- **`PointerFifo`** mirrors the RTL's design, not just its behavior: read and write pointers with an extra wrap bit, `empty` when the pointers match, `full` when the addresses match and the wrap bits differ, a registered `rd_data`, and push and pop both decided against the full and empty flags from before the clock edge.
+- **`DequeFifo`** is the C++ twin of `verif/ref_model.py`: a `std::deque` and a count, written differently on purpose so the two models can catch each other's mistakes.
+- **`gray.hpp`** has the Gray-code conversions the async FIFO uses, with tests that every step (including the wrap) flips exactly one bit.
+
+| Check | Result |
+|---|---|
+| Directed tests | 11, one per FIFO bug class (full one entry early, push while full, pop while empty, same-cycle push and pop at full and empty, reset mid-traffic, pointer wrap, data masking) |
+| Randomized cross-check | 80 runs (depth 4, 8, 16 and 32 x width 8 and 16 x 10 seeds), 5,000 cycles each, compared against `DequeFifo` every cycle with phased traffic and bursty resets; each run also checks it reached full, empty and a same-cycle push and pop |
+| Gray code | 3 tests: round trip for every 16-bit value, one-bit steps for 2- to 7-bit pointers, known values |
+| All tests | **94 of 94 pass in about 0.6 s** |
+| Planted bug: `full` ignores the wrap bit (`-DFIFO_PLANTED_BUG=WRAP_BIT`) | **90 of 94 fail**; only the Gray-code and depth-check tests, which don't touch that logic, still pass |
+| Planted bug: reset leaves the read pointer stale (`-DFIFO_PLANTED_BUG=PARTIAL_RESET`) | **81 of 94 fail**: all 80 randomized runs and the directed reset test |
+
+```bash
+cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
+cmake --build cpp/build
+ctest --test-dir cpp/build --output-on-failure
+```
+
+CI builds and runs it in a third job next to the simulation and formal jobs.

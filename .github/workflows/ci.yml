@@ -38,3 +38,14 @@ jobs:
           cd formal
           sby -f sync_fifo.sby
           sby -f async_fifo.sby
+
+  cpp-model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the C++ reference model and GoogleTest suite
+        run: |
+          cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build cpp/build -j
+      - name: Run the tests
+        run: ctest --test-dir cpp/build --output-on-failure
