@@ -11,6 +11,7 @@ Two parameterized FIFOs in Verilog, one single-clock, one dual-clock (async), bo
 - Functional coverage of every corner case I listed (7 of 7 in each suite), on every random seed I tried
 - Passes across 40 random seeds (sync) and 25 (async), and at 16 different depth and width combinations
 - Found and fixed a flaw in my own random test (it failed about 3 runs in 8) by shaping the traffic so every corner case is reached
+- A **failure-triage tool** that runs the suite over many seeds, reruns each failure with the same seed and labels it as failing on every seed, on some seeds or flaky, with a replay command; it runs in CI and is itself tested against a planted RTL bug and two planted test faults (see [Failure triage](#failure-triage))
 - A **C++17 cycle-accurate model** of the sync FIFO with **94 GoogleTest tests**, cross-checked every cycle against an independent `std::deque` model and caught by planted bugs (see [C++ reference model](#c-reference-model))
 
 
@@ -56,7 +57,8 @@ I re-ran everything from a fresh `git clone` on 2026-09-23 (commit `b637323`, Ap
 5. Added formal checks for the things simulation cannot exhaust.
 
 6. Ran the suite over many random seeds. That exposed a flaw in my own test: with a random seed, the sync suite failed about 3 runs in 8. The design was fine every time (it always matched the reference model); the failure was the test's own check that the random traffic had reached every corner case. A flat 50/50 push/pop mix rarely sat at full, and independent 2% resets almost never came back to back. I changed the traffic to run in phases (balanced, fill-heavy, drain-heavy, both-heavy) and to reset in bursts. It now passes 40 of 40 random seeds, and I re-checked that the suite still fails when I break the RTL on purpose (9 of 10 tests fail with the wrap bit removed, 7 of 10 with `empty` stuck low).
-7. Added `DEPTH` and `DATA_WIDTH` overrides and a sweep across sizes. Each configuration builds in its own folder, which also removed an earlier annoyance where switching between `make` and `make async` reused a stale build.
+7. Wrote `tools/triage.py` so the next failure like that gets sorted automatically instead of by hand (see [Failure triage](#failure-triage)).
+8. Added `DEPTH` and `DATA_WIDTH` overrides and a sweep across sizes. Each configuration builds in its own folder, which also removed an earlier annoyance where switching between `make` and `make async` reused a stale build.
 
 One practical note if you run it yourself: `make` does not like folder paths that contain spaces.
 
@@ -236,6 +238,45 @@ sby -f sync_fifo.sby     # PASS in ~20s
 sby -f async_fifo.sby    # PASS in ~6s
 ```
 
+## Failure triage
+
+The 3-in-8 failure above took me a while to sort out by hand: rerun the failing seed, check it fails again, try other seeds, then decide whether the design or the test was wrong. `tools/triage.py` does that sorting automatically.
+
+1. Runs the suite once per seed, each run writing its own JUnit results file.
+2. Reruns every failing test on its own with the same seed (3 times by default).
+3. Labels each failure:
+
+| Verdict | What it means | Where to look first |
+|---|---|---|
+| **fails on every seed** | Systematic; does not depend on the random traffic | The design, or a test that can never pass |
+| **fails on some seeds** | Reproducible with those seeds only; certain traffic reaches it | A real corner-case bug or a testbench fault; replay a listed seed |
+| **flaky** | The same seed fails and then passes | Something besides the seed and the design: leftover state, timing, environment |
+
+4. Groups failures by message with the numbers removed, so one bug hit on ten seeds is one row, then writes `triage_report.md`, `triage_report.json` and a `make` command that replays each failure on its own.
+
+Exit code is 0 when everything passes, 1 for any reproducible failure and 2 when every failure was flaky.
+
+```bash
+python tools/triage.py --seeds 30                  # sync suite, seeds 1..30
+python tools/triage.py --target async --seeds 15
+bash tools/triage_selftest.sh                     # checks the tool against known answers
+```
+
+### Testing the triage tool itself
+
+A triage tool that labels things wrong is worse than none, so `tools/triage_selftest.sh` runs it on three cases where I know the right answer:
+
+| Case | Expected | Result (8 seeds) |
+|---|---|---|
+| Real design | Nothing fails, exit 0 | 80 of 80 runs pass |
+| Planted RTL bug: `full` ignores the wrap bit | Fails on every seed, exit 1 | 9 of 10 tests fail on all 8 seeds (same 9 as the hand check above), 0 flaky |
+| `verif/test_triage_demo.py`: a testbench that never checks `full` before a random-length burst | Fails on some seeds | Fails on seeds 3 and 5 only, every rerun |
+| Same file: a test that trips on a marker file left by the previous run | Flaky | Fails on 4 seeds, then passes on rerun |
+
+The two demo tests exist only for this check; `make` never runs them.
+
+CI runs the self-test, then triages the sync suite over 30 seeds (300 test runs) and the async suite over 15 (120), adds both reports to the job summary and uploads them as an artifact. Both currently come back clean.
+
 ## How to run
 
 ### Setup (macOS, Homebrew)
@@ -285,7 +326,11 @@ fifo-verification/
 │   ├── test_sync_fifo.py    # 10 cocotb tests (9 directed + 1 randomized), sync
 │   ├── test_async_fifo.py   # 8 cocotb tests (7 directed + 1 randomized), async
 │   ├── ref_model.py         # RefFifo (sync, cycle-accurate) + OrderedIntegrityChecker (async, order-only)
-│   └── coverage.py          # coverage bin definitions for both suites, plus report/export
+│   ├── coverage.py          # coverage bin definitions for both suites, plus report/export
+│   └── test_triage_demo.py  # two deliberately faulty tests, used only by the triage self-test
+├── tools/
+│   ├── triage.py            # multi-seed run, same-seed reruns, failure verdicts, report
+│   └── triage_selftest.sh   # checks triage.py on a clean run, a planted RTL bug and planted test faults
 ├── formal/
 │   ├── sync_fifo_formal.sv    # black-box formal wrapper + properties for sync_fifo.v
 │   ├── sync_fifo.sby          # SymbiYosys job file, sync (BMC, depth 16)

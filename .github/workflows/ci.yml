@@ -28,6 +28,34 @@ jobs:
       - name: Sweep across depths and data widths
         run: make sweep
 
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install Icarus Verilog and the Python packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          pip install -r requirements.txt
+      - name: Self-test (clean design, planted RTL bug, planted flaky and seed-dependent tests)
+        run: bash tools/triage_selftest.sh
+      - name: Triage the sync suite over 30 seeds
+        run: python tools/triage.py --seeds 30 --out results/triage/sync
+      - name: Triage the async suite over 15 seeds
+        run: python tools/triage.py --target async --seeds 15 --out results/triage/async
+      - name: Add the reports to the job summary
+        if: always()
+        run: cat results/triage/*/triage_report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: triage-reports
+          path: results/triage*/
+
   formal:
     runs-on: ubuntu-latest
     steps:

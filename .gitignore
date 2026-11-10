@@ -13,3 +13,7 @@ formal/async_fifo/
 
 # OS
 .DS_Store
+
+# triage tool output (CI uploads it as an artifact)
+results/triage/
+results/triage_selftest/
